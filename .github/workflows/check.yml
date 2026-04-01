@@ -33,23 +33,30 @@ jobs:
         run: |
           MODEL="${{ github.event.inputs.model || 'SM-S9310' }}"
           CSC="${{ github.event.inputs.csc || 'CHC' }}"
-          IMEI="${{ github.event.inputs.imei || '350008610416934' }}"
+          IMEI="${{ github.event.inputs.imei }}"
           
           pip3 install git+https://github.com/martinetd/samloader.git
           
-          # Fetching full version string via samloader
+          # Check Update
           full_version=$(python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" checkupdate | tail -n 1)
           latest=$(echo $full_version | cut -d'/' -f1)
-          current=`cat SmartManagerCN/version` || need_update=1
+          current=`cat SmartManagerCN/version`
           
           need_update=0
-          [[ $latest != $current ]] && need_update=1
+          if [[ $latest != $current ]]; then
+            echo "- Update found: $full_version"
+            need_update=1
+          else
+            echo "- Everything is up to date: $current"
+            need_update=0
+          fi
           
           echo "latest_full_version=$full_version" >> $GITHUB_ENV
           echo "latest_version=$latest" >> $GITHUB_ENV
           echo "need_update=$need_update" >> $GITHUB_ENV
           echo "target_model=$MODEL" >> $GITHUB_ENV
           echo "target_csc=$CSC" >> $GITHUB_ENV
+
 
       - name: Free space
         if: env.need_update == 1
@@ -81,22 +88,51 @@ jobs:
         run: |
           MODEL="${{ env.target_model }}"
           CSC="${{ env.target_csc }}"
-          IMEI="${{ github.event.inputs.imei || '350008610416934' }}"
+          IMEI="${{ github.event.inputs.imei }}"
           VERSION="${{ env.latest_full_version }}"
           DOWN_DIR="fw_download"
 
           mkdir -p "$DOWN_DIR"
+          echo "  Samsung FW Downloader   "
+          echo "MODEL: $MODEL | CSC: $CSC"
+          echo "- Fetching latest firmware..."
+          echo
 
-          # Running samloader
+          # Download
           python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" download -v "$VERSION" -O "$DOWN_DIR"
 
+          if [ $? -ne 0 ]; then
+            echo "- Download failed. Check IMEI/MODEL/CSC."
+            exit 1
+          fi
+
           # Decrypt
-          ENC_FILE=$(find "$DOWN_DIR" -name "*.enc*" | head -n 1)
-          python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" decrypt -v "$VERSION" -i "$ENC_FILE" -o "${DOWN_DIR}/firmware.zip"
+          enc_file=$(find "$DOWN_DIR" -name "*.enc*" | head -n 1)
+
+          if [ -z "$enc_file" ]; then
+            echo "- No encrypted firmware file found!"
+            exit 1
+          fi
+
+          python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" decrypt \
+              -v "$VERSION" \
+              -i "$enc_file" \
+              -o "${DOWN_DIR}/firmware.zip"
+
+          if [ $? -ne 0 ]; then
+            echo "- Decryption failed."
+            exit 1
+          fi
+
+          # Show Info
+          file_size=$(du -m "${DOWN_DIR}/firmware.zip" | cut -f1)
+          echo
+          echo "- Firmware decrypted successfully!. Firmware Size: ${file_size} MB"
 
           # Extract only AP from the zip
           unzip "${DOWN_DIR}/firmware.zip" "AP*" -d "$DOWN_DIR"
           echo "AP_TAR=$(find "$DOWN_DIR" -name "AP*" | head -n 1)" >> $GITHUB_ENV
+          rm -f "$enc_file"
 
       - name: Update packages
         if: env.need_update == 1
