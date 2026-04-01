@@ -1,4 +1,4 @@
-Name: Check packages update
+name: Check packages update
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: true
         default: 'SM-S9310'
       csc:
-        description: 'CSC Region'
+        description: 'CSC (China)'
         required: true
         default: 'CHC'
       imei:
