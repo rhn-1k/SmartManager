@@ -33,10 +33,19 @@ jobs:
         run: |
           MODEL="${{ github.event.inputs.model || 'SM-S9310' }}"
           CSC="${{ github.event.inputs.csc || 'CHC' }}"
-          need_update=0
-          latest=`curl --retry 5 --retry-delay 5 http://fota-cloud-dn.ospserver.net/firmware/${CSC}/${MODEL}/version.xml | grep latest | sed 's/^[^>]*>//' | sed 's/<.*//' | cut -d'/' -f1`
+          IMEI="${{ github.event.inputs.imei || '350008610416934' }}"
+          
+          pip3 install git+https://github.com/martinetd/samloader.git
+          
+          # Fetching full version string via samloader
+          full_version=$(python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" checkupdate | tail -n 1)
+          latest=$(echo $full_version | cut -d'/' -f1)
           current=`cat SmartManagerCN/version` || need_update=1
+          
+          need_update=0
           [[ $latest != $current ]] && need_update=1
+          
+          echo "latest_full_version=$full_version" >> $GITHUB_ENV
           echo "latest_version=$latest" >> $GITHUB_ENV
           echo "need_update=$need_update" >> $GITHUB_ENV
           echo "target_model=$MODEL" >> $GITHUB_ENV
@@ -73,18 +82,18 @@ jobs:
           MODEL="${{ env.target_model }}"
           CSC="${{ env.target_csc }}"
           IMEI="${{ github.event.inputs.imei || '350008610416934' }}"
-          VERSION="${{ env.latest_version }}"
+          VERSION="${{ env.latest_full_version }}"
           DOWN_DIR="fw_download"
-          
+
           mkdir -p "$DOWN_DIR"
-          
+
           # Running samloader
           python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" download -v "$VERSION" -O "$DOWN_DIR"
-          
+
           # Decrypt
           ENC_FILE=$(find "$DOWN_DIR" -name "*.enc*" | head -n 1)
           python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" decrypt -v "$VERSION" -i "$ENC_FILE" -o "${DOWN_DIR}/firmware.zip"
-          
+
           # Extract only AP from the zip
           unzip "${DOWN_DIR}/firmware.zip" "AP*" -d "$DOWN_DIR"
           echo "AP_TAR=$(find "$DOWN_DIR" -name "AP*" | head -n 1)" >> $GITHUB_ENV
@@ -99,18 +108,18 @@ jobs:
           mv system_a.img system.img
           mkdir system
           fuse.erofs system.img system
-          
+
           # Copying SmartManagerCN with pathes
           cp -f -a --preserve=all "system/system/app/SmartManager_v6_DeviceSecurity_CN/SmartManager_v6_DeviceSecurity_CN.apk" "SmartManagerCN/packages/app/SmartManager_v6_DeviceSecurity_CN/"
           cp -f -a --preserve=all "system/system/priv-app/AppLock/AppLock.apk" "SmartManagerCN/packages/priv-app/SAppLock/SAppLock.apk"
           cp -f -a --preserve=all "system/system/priv-app/Firewall/Firewall.apk" "SmartManagerCN/packages/priv-app/Firewall/Firewall.apk"
           cp -f -a --preserve=all "system/system/priv-app/SmartManagerCN/SmartManagerCN.apk" "SmartManagerCN/packages/priv-app/SmartManagerCN/SmartManagerCN.apk"
-          
+
           cp -f -a --preserve=all "system/system/etc/permissions/privapp-permissions-com.samsung.android.sm_cn.xml" "SmartManagerCN/packages/etc/permissions/"
           cp -f -a --preserve=all "system/system/etc/permissions/signature-permissions-com.samsung.android.sm_cn.xml" "SmartManagerCN/packages/etc/permissions/"
           cp -f -a --preserve=all "system/system/etc/permissions/privapp-permissions-com.samsung.android.applock.xml" "SmartManagerCN/packages/etc/permissions/"
           cp -f -a --preserve=all "system/system/etc/permissions/privapp-permissions-com.sec.android.app.firewall.xml" "SmartManagerCN/packages/etc/permissions/"
-          
+
           sudo umount system && rm -rf system system.img super_raw.img super.img.lz4 fw_download
 
       - name: Prepare Release Assets
