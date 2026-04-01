@@ -2,19 +2,6 @@ name: Check packages update
 
 on:
   workflow_dispatch:
-    inputs:
-      model:
-        description: 'Device Model'
-        required: true
-        default: 'SM-S9310'
-      csc:
-        description: 'CSC Region'
-        required: true
-        default: 'CHC'
-      imei:
-        description: 'Device IMEI'
-        required: true
-        default: '350008610416934'
   schedule:
     - cron: "0 0 * * *"
   push:
@@ -31,9 +18,9 @@ jobs:
 
       - name: Compare latest version with current version
         run: |
-          MODEL="${{ github.event.inputs.model || 'SM-S9310' }}"
-          CSC="${{ github.event.inputs.csc || 'CHC' }}"
-          IMEI="${{ github.event.inputs.imei }}"
+          MODEL="SM-S9310"
+          CSC="CHC"
+          IMEI="350008610416934"
           
           pip3 install git+https://github.com/martinetd/samloader.git
           
@@ -56,7 +43,7 @@ jobs:
           echo "need_update=$need_update" >> $GITHUB_ENV
           echo "target_model=$MODEL" >> $GITHUB_ENV
           echo "target_csc=$CSC" >> $GITHUB_ENV
-
+          echo "target_imei=$IMEI" >> $GITHUB_ENV
 
       - name: Free space
         if: env.need_update == 1
@@ -88,7 +75,7 @@ jobs:
         run: |
           MODEL="${{ env.target_model }}"
           CSC="${{ env.target_csc }}"
-          IMEI="${{ github.event.inputs.imei }}"
+          IMEI="${{ env.target_imei }}"
           VERSION="${{ env.latest_full_version }}"
           DOWN_DIR="fw_download"
 
