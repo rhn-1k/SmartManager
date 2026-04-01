@@ -1,0 +1,10 @@
+*.bat text eol=crlf
+
+* text=auto eol=lf
+
+Installers/Installer.zip binary
+.github/tools/bin/* binary
+signature/* binary
+*.apk binary
+*.xml binary
+*.jpg binary
