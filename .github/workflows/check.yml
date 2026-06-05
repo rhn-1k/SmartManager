@@ -21,14 +21,12 @@ jobs:
           MODEL="SM-S9310"
           CSC="CHC"
           IMEI="350008610416934"
-          
-          pip3 install git+https://github.com/martinetd/samloader.git
-          
-          # Check Update
-          full_version=$(python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" checkupdate | tail -n 1)
+          pip3 install git+https://github.com/rhn-1k/samloader.git
+
+          full_version=$(samloader -m "$MODEL" -r "$CSC" -i "$IMEI" checkupdate | tail -n 1)
           latest=$(echo $full_version | cut -d'/' -f1)
           current=`cat SmartManagerCN/version`
-          
+
           need_update=0
           if [[ $latest != $current ]]; then
             echo "- Update found: $full_version"
@@ -37,7 +35,7 @@ jobs:
             echo "- Everything is up to date: $current"
             need_update=0
           fi
-          
+
           echo "latest_full_version=$full_version" >> $GITHUB_ENV
           echo "latest_version=$latest" >> $GITHUB_ENV
           echo "need_update=$need_update" >> $GITHUB_ENV
@@ -60,7 +58,6 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -yq linux-modules-extra-$(uname -r) liblz4-tool android-sdk-libsparse-utils f2fs-tools zip
-          pip3 install git+https://github.com/martinetd/samloader.git
 
       - name: Set up tools
         if: env.need_update == 1
@@ -80,47 +77,30 @@ jobs:
           DOWN_DIR="fw_download"
 
           mkdir -p "$DOWN_DIR"
-          echo "  Samsung FW Downloader   "
+          echo "Samsung FW Downloader"
           echo "MODEL: $MODEL | CSC: $CSC"
           echo "- Fetching latest firmware..."
-          echo
-
+          
           # Download
-          python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" download -v "$VERSION" -O "$DOWN_DIR"
+          samloader -m "$MODEL" -r "$CSC" -i "$IMEI" download -v "$VERSION" -O "$DOWN_DIR"
 
           if [ $? -ne 0 ]; then
             echo "- Download failed. Check IMEI/MODEL/CSC."
             exit 1
           fi
 
-          # Decrypt
-          enc_file=$(find "$DOWN_DIR" -name "*.enc*" | head -n 1)
+          zip_file=$(find "$DOWN_DIR" -name "*.zip" | head -n 1)
 
-          if [ -z "$enc_file" ]; then
-            echo "- No encrypted firmware file found!"
+          if [ -z "$zip_file" ]; then
+            echo "- No decrypted firmware zip file found!"
             exit 1
           fi
 
-          python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" decrypt \
-              -v "$VERSION" \
-              -i "$enc_file" \
-              -o "${DOWN_DIR}/firmware.zip"
+          file_size=$(du -m "$zip_file" | cut -f1)
+          echo "- Firmware Downloaded. Size: ${file_size} MB"
 
-          if [ $? -ne 0 ]; then
-            echo "- Decryption failed."
-            exit 1
-          fi
-
-          # Show Info
-          file_size=$(du -m "${DOWN_DIR}/firmware.zip" | cut -f1)
-          echo
-          echo "- Firmware decrypted successfully!. Firmware Size: ${file_size} MB"
-
-          # Extract only AP from the zip
-          unzip "${DOWN_DIR}/firmware.zip" "AP*" -d "$DOWN_DIR"
+          unzip "$zip_file" "AP*" -d "$DOWN_DIR"
           echo "AP_TAR=$(find "$DOWN_DIR" -name "AP*" | head -n 1)" >> $GITHUB_ENV
-          rm -f "$enc_file"
-
       - name: Update packages
         if: env.need_update == 1
         run: |
@@ -134,7 +114,7 @@ jobs:
 
           # Copying SmartManagerCN with pathes
           cp -f -a --preserve=all "system/system/app/SmartManager_v6_DeviceSecurity_CN/SmartManager_v6_DeviceSecurity_CN.apk" "SmartManagerCN/packages/app/SmartManager_v6_DeviceSecurity_CN/"
-          cp -f -a --preserve=all "system/system/priv-app/AppLock/AppLock.apk" "SmartManagerCN/packages/priv-app/SAppLock/SAppLock.apk"
+          cp -f -a --preserve=all "system/system/app/AppLock/AppLock.apk" "SmartManagerCN/packages/app/AppLock/AppLock.apk"
           cp -f -a --preserve=all "system/system/priv-app/Firewall/Firewall.apk" "SmartManagerCN/packages/priv-app/Firewall/Firewall.apk"
           cp -f -a --preserve=all "system/system/priv-app/SmartManagerCN/SmartManagerCN.apk" "SmartManagerCN/packages/priv-app/SmartManagerCN/SmartManagerCN.apk"
 
@@ -142,7 +122,6 @@ jobs:
           cp -f -a --preserve=all "system/system/etc/permissions/signature-permissions-com.samsung.android.sm_cn.xml" "SmartManagerCN/packages/etc/permissions/"
           cp -f -a --preserve=all "system/system/etc/permissions/privapp-permissions-com.samsung.android.applock.xml" "SmartManagerCN/packages/etc/permissions/"
           cp -f -a --preserve=all "system/system/etc/permissions/privapp-permissions-com.sec.android.app.firewall.xml" "SmartManagerCN/packages/etc/permissions/"
-
           sudo umount system && rm -rf system system.img super_raw.img super.img.lz4 fw_download
 
       - name: Prepare Release Assets
